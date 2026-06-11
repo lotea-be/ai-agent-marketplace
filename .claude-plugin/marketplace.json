@@ -1,0 +1,20 @@
+{
+  "name": "lotea-agents",
+  "owner": {
+    "name": "lotea-be",
+    "url": "https://github.com/lotea-be"
+  },
+  "metadata": {
+    "description": "Lotea's catalog of Claude Code agents and workflows.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "qrspi",
+      "source": { "source": "github", "repo": "lotea-be/qrspi" },
+      "description": "Eight-stage spec-driven workflow (Questions → Research → Design → Structure → Plan → Worktree → Implement → PR) on top of OpenSpec. Includes /qrspi-* commands, opsx-* helpers, seven stage subagents, and supporting skills.",
+      "category": "workflow",
+      "tags": ["spec-driven", "openspec", "workflow", "subagents", "qrspi"]
+    }
+  ]
+}
