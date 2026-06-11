@@ -59,3 +59,7 @@ Add an entry to the `plugins` array in [.claude-plugin/marketplace.json](.claude
 ```
 
 Each plugin lives in its own repository under [lotea-be](https://github.com/lotea-be) and is referenced here by `source`. After updating the manifest, bump `metadata.version` and run `/plugin marketplace update lotea-agents` to test.
+
+## License
+
+[MIT](LICENSE) © Lotea
