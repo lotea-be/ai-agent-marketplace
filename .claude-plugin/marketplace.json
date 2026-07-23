@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "qrspi",
-      "source": { "source": "github", "repo": "lotea-be/qrspi", "ref": "v0.6.0" },
+      "source": { "source": "github", "repo": "lotea-be/qrspi", "ref": "v0.7.0" },
       "description": "Eight-stage spec-driven workflow (Questions, Research, Design, Structure, Slices, Plan, Implement, PR) on top of OpenSpec. Includes /qrspi:* commands, seven stage subagents, and supporting skills.",
       "category": "workflow",
       "tags": ["spec-driven", "openspec", "workflow", "subagents", "qrspi"]
