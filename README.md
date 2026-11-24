@@ -63,3 +63,19 @@ Each plugin lives in its own repository under [lotea-be](https://github.com/lote
 ## License
 
 [MIT](LICENSE) © Lotea
+
+## Releasing a plugin version (maintainers)
+
+Each plugin is pinned to a release tag in `.claude-plugin/marketplace.json`.
+The `Bump plugin pin` workflow (`.github/workflows/bump-plugin-pin.yml`) opens a
+PR that moves one plugin's pin to a newer published tag. It never pushes to
+`main`, refuses downgrades, and checks the tag exists on the plugin's repo.
+
+- **Automatic:** a plugin's release workflow sends a `plugin-release`
+  `repository_dispatch` event with `{"plugin": "<name>", "version": "X.Y.Z"}`.
+  This needs a token with Contents read/write on this repository, stored as a
+  secret in the plugin repo.
+- **Manual:** run the workflow from the Actions tab (or
+  `gh workflow run bump-plugin-pin.yml -f plugin=<name> -f version=X.Y.Z`).
+
+Merging the PR is what delivers the release to installed users.

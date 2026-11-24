@@ -1,0 +1,120 @@
+# Opens a PR that bumps one plugin's pinned source ref in
+# .claude-plugin/marketplace.json to a published release tag.
+#
+# Triggered by:
+#   - repository_dispatch `plugin-release`, sent by a plugin repo's release
+#     workflow with client_payload {"plugin": "<name>", "version": "X.Y.Z"}
+#   - workflow_dispatch, for a manual run with the same two inputs
+#
+# It never pushes to main: the pin is every consumer's install source, so the
+# change always lands as a reviewable PR.
+name: Bump plugin pin
+
+on:
+  repository_dispatch:
+    types: [plugin-release]
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: Plugin name as listed in marketplace.json (e.g. qrspi)
+        required: true
+      version:
+        description: Released version without the v prefix (e.g. 0.16.0)
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bump-${{ github.event.client_payload.plugin || inputs.plugin }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve and validate inputs
+        id: in
+        env:
+          PLUGIN: ${{ github.event.client_payload.plugin || inputs.plugin }}
+          VERSION: ${{ github.event.client_payload.version || inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$PLUGIN" =~ ^[a-z0-9-]+$ ]] || { echo "::error::invalid plugin name '$PLUGIN'"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid version '$VERSION'"; exit 1; }
+          echo "plugin=$PLUGIN" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check the entry, the tag and the direction
+        id: check
+        env:
+          PLUGIN: ${{ steps.in.outputs.plugin }}
+          TAG: ${{ steps.in.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          read -r REPO CURRENT < <(node -e '
+            const m = require("./.claude-plugin/marketplace.json");
+            const p = m.plugins.find(p => p.name === process.env.PLUGIN);
+            if (!p) { console.error(`::error::plugin ${process.env.PLUGIN} not in marketplace.json`); process.exit(1); }
+            if (!p.source || p.source.source !== "github" || !p.source.repo) { console.error("::error::plugin source is not a github repo"); process.exit(1); }
+            console.log(p.source.repo, p.source.ref || "");
+          ')
+          if [ "$CURRENT" = "$TAG" ]; then
+            echo "already pinned to $TAG; nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # The tag must be published on the plugin repo (public API, no write access needed).
+          gh api "repos/$REPO/git/ref/tags/$TAG" --silent || { echo "::error::tag $TAG not found on $REPO"; exit 1; }
+          # Refuse downgrades.
+          NEWER="$(printf '%s\n%s\n' "${CURRENT#v}" "${TAG#v}" | sort -V | tail -1)"
+          if [ -n "$CURRENT" ] && [ "$NEWER" != "${TAG#v}" ]; then
+            echo "::error::$TAG is older than the current pin $CURRENT; refusing to downgrade"; exit 1
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Edit the pin and open the PR
+        if: steps.check.outputs.skip != 'true'
+        env:
+          PLUGIN: ${{ steps.in.outputs.plugin }}
+          TAG: ${{ steps.in.outputs.tag }}
+          CURRENT: ${{ steps.check.outputs.current }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Change only this plugin's source.ref, keeping the file's formatting.
+          node -e '
+            const fs = require("fs");
+            const f = ".claude-plugin/marketplace.json";
+            const text = fs.readFileSync(f, "utf8");
+            const { PLUGIN, CURRENT, TAG } = process.env;
+            const start = text.indexOf(`"name": "${PLUGIN}"`);
+            if (start < 0) { console.error("::error::entry not found in file text"); process.exit(1); }
+            const end = text.indexOf("}", text.indexOf("\"source\"", start));
+            const block = text.slice(start, end);
+            const next = block.replace(`"ref": "${CURRENT}"`, `"ref": "${TAG}"`);
+            if (next === block) { console.error("::error::could not find the current ref in the entry"); process.exit(1); }
+            const out = text.slice(0, start) + next + text.slice(end);
+            JSON.parse(out);
+            fs.writeFileSync(f, out);
+          '
+          BRANCH="chore/bump-$PLUGIN-$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add .claude-plugin/marketplace.json
+          git commit -m "chore: bump $PLUGIN source to $TAG"
+          git push --force -u origin "$BRANCH"
+          if gh pr view "$BRANCH" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            echo "PR for $BRANCH already open; branch updated"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore: bump $PLUGIN source to $TAG" \
+              --body "Point the \`$PLUGIN\` plugin pin at the published $TAG release (was ${CURRENT:-unset}).
+
+          Opened automatically by the \`Bump plugin pin\` workflow. Merging this PR is what delivers the release to installed users."
+          fi
